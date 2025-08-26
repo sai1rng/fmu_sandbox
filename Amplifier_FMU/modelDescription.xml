@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <fmiModelDescription
   fmiVersion="2.0"
-  modelName="GainBlock"
+  modelName="Amplifier"
   guid="{8c4e810f-3df3-4a00-8276-176fa3c9f000}"
-  description="A simple gain block where y = k * u"
+  description="A simple amplifier where y = k * u"
   numberOfEventIndicators="0">
 
   <CoSimulation

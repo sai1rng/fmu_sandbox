@@ -1,0 +1,27 @@
+{
+  "events": [
+    {
+      "name": "Stuck-at fault on input u",
+      "startTime": 2.0,
+      "duration": 3.0,
+      "variables": [
+        {
+          "valueReference": 0,
+          "type": "stuckAtValue",
+          "value": -0.5
+        }
+      ]
+    },
+    {
+      "name": "Offset fault on input u",
+      "startTime": 7.0,
+      "variables": [
+        {
+          "valueReference": 0,
+          "type": "offset",
+          "value": 0.75
+        }
+      ]
+    }
+  ]
+}
