@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fmiModelDescription
+  fmiVersion="2.0"
+  modelName="GainBlock"
+  guid="{8c4e810f-3df3-4a00-8276-176fa3c9f000}"
+  description="A simple gain block where y = k * u"
+  numberOfEventIndicators="0">
+
+  <CoSimulation
+    modelIdentifier="model"
+    canHandleVariableCommunicationStepSize="true">
+  </CoSimulation>
+
+  <ModelVariables>
+    <ScalarVariable name="u" valueReference="0" description="Input signal" causality="input">
+      <Real start="0.0"/>
+    </ScalarVariable>
+    <ScalarVariable name="y" valueReference="1" description="Output signal" causality="output" initial="calculated">
+      <Real/> </ScalarVariable>
+    <ScalarVariable name="k" valueReference="2" description="Gain parameter" causality="parameter" variability="fixed">
+      <Real start="2.0"/>
+    </ScalarVariable>
+  </ModelVariables>
+
+  <ModelStructure>
+    <Outputs>
+      <Unknown index="2" dependencies=""/> </Outputs>
+  </ModelStructure>
+
+</fmiModelDescription>

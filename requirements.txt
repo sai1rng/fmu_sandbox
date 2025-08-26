@@ -1,0 +1,5 @@
+numpy==2.3.2
+fmpy
+matplotlib
+PyQt6
+PySide6
