@@ -1,5 +1,7 @@
 import numpy as np
 from fmpy import simulate_fmu
+import matplotlib
+matplotlib.use('TkAgg') # Set backend before importing pyplot
 import matplotlib.pyplot as plt
 
 # The name of your compiled FMU
