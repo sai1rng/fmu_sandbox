@@ -10,6 +10,17 @@
 
 #include <string>
 #include <stdexcept>
+#include <thread>
+#include <atomic>
+#include <memory>
+
+// Local includes for concurrent architecture
+#include "ThreadSafeQueue.hpp"
+
+// Forward declarations for Prometheus types to reduce header dependency
+namespace prometheus {
+class Exposer;
+}
 
 // FMI standard headers are C headers, so we wrap them in extern "C" for C++ compatibility.
 extern "C" {
@@ -42,6 +53,14 @@ constexpr fmi2ValueReference VR_K = 2;
 constexpr double FAULT_START_TIME = 3.0;
 constexpr double FAULT_END_TIME = 7.0;
 constexpr double FAULT_VALUE = 0.5;
+
+// A struct to hold the data sent to the Prometheus worker thread.
+struct MetricsData {
+    double time;
+    double u;
+    double y;
+    double k;
+};
 
 // A dispatch table to hold function pointers loaded from the inner FMU's shared library.
 struct InnerFMU {
@@ -93,6 +112,12 @@ public:
     const fmi2CallbackFunctions* getCallbacks() const { return m_callbacks; }
 
 private:
+    // --- Prometheus Worker Thread ---
+    void prometheusWorker(); // The main function for the worker thread.
+    std::thread m_prometheusWorkerThread;
+    ThreadSafeQueue<MetricsData> m_metricsChannel;
+    std::unique_ptr<prometheus::Exposer> m_exposer;
+
     // --- Private Member Variables ---
     double m_u = 0.0, m_y = 0.0, m_k = 2.0, m_currentTime = 0.0; // Cached values of the wrapper's variables.
     DLL_HANDLE m_innerFMUHandle = nullptr;                       // Handle to the loaded inner FMU's shared library.

@@ -9,6 +9,11 @@
 #include <vector>
 #include <cstring> // For strncmp
 
+// Prometheus C++ client library headers
+#include <prometheus/exposer.h>
+#include <prometheus/registry.h>
+#include <prometheus/gauge.h>
+
 /**
  * @brief Converts a file URI (e.g., "file:///path/to/file") to a standard filesystem path.
  * @param uri The file URI string.
@@ -73,10 +78,26 @@ FaultWrapper::FaultWrapper(fmi2String instanceName, fmi2String fmuResourceLocati
         FREE_LIBRARY(m_innerFMUHandle); // Ensure library is freed on failure.
         throw std::runtime_error("Failed to instantiate inner FMU.");
     }
+
+    // 4. Start the Prometheus worker thread.
+    // The thread is launched and its main function `prometheusWorker` is executed.
+    // `this` is passed to give the member function access to the class instance.
+    m_prometheusWorkerThread = std::thread(&FaultWrapper::prometheusWorker, this);
 }
 
 // The destructor is responsible for all cleanup (RAII).
 FaultWrapper::~FaultWrapper() {
+    // --- Graceful shutdown of the worker thread ---
+    log(fmi2OK, "info", "Shutting down Prometheus worker thread.");
+    // 1. Signal the worker to stop by closing the channel.
+    m_metricsChannel.close();
+
+    // 2. Wait for the worker thread to finish its execution.
+    if (m_prometheusWorkerThread.joinable()) {
+        m_prometheusWorkerThread.join();
+    }
+
+    // --- Cleanup of inner FMU resources ---
     // Terminate and free the inner FMU instance if it exists.
     if (m_innerFMUInstance) {
         m_innerFunctions.Terminate(m_innerFMUInstance);
@@ -149,14 +170,87 @@ fmi2Status FaultWrapper::doStep(fmi2Real time, fmi2Real step, fmi2Boolean noSet)
     // Check if the current time is within the fault window.
     if (m_currentTime >= FAULT_START_TIME && m_currentTime < FAULT_END_TIME) u_to_set += FAULT_VALUE;
 
-    // 1. Set the (potentially faulty) input on the inner FMU.
+    // --- Inner FMU Simulation Step ---
+    // a. Set the (potentially faulty) input on the inner FMU.
     fmi2ValueReference vr_u = VR_U;
     m_innerFunctions.SetReal(m_innerFMUInstance, &vr_u, 1, &u_to_set);
-    // 2. Tell the inner FMU to perform its calculation for the step.
+    // b. Tell the inner FMU to perform its calculation for the step.
     m_innerFunctions.DoStep(m_innerFMUInstance, time, step, noSet);
-    // 3. Retrieve the result from the inner FMU and cache it.
+    // c. Retrieve the result from the inner FMU and cache it.
     fmi2ValueReference vr_y = VR_Y;
-    return m_innerFunctions.GetReal(m_innerFMUInstance, &vr_y, 1, &m_y);
+    fmi2Status status = m_innerFunctions.GetReal(m_innerFMUInstance, &vr_y, 1, &m_y);
+
+    // --- Push metrics to the worker thread ---
+    // This is a non-blocking operation that sends the latest state to the Prometheus server.
+    m_metricsChannel.push({m_currentTime, m_u, m_y, m_k});
+
+    return status;
 }
 
 fmi2Status FaultWrapper::terminate() { return m_innerFunctions.Terminate(m_innerFMUInstance); }
+
+void FaultWrapper::prometheusWorker() {
+    try {
+        // Create an exposer that will listen on port 8080
+        m_exposer = std::make_unique<prometheus::Exposer>("127.0.0.1:8080");
+
+        // Create a registry to hold the metrics
+        auto registry = std::make_shared<prometheus::Registry>();
+        m_exposer->RegisterCollectable(registry);
+
+        // Create Prometheus Gauge objects for each scalar variable.
+        // A Gauge is a metric that represents a single numerical value that can arbitrarily go up and down.
+        // We add a constant label "instance" to all metrics to identify which FMU they belong to.
+        const std::map<std::string, std::string> constant_labels = {{"instance", m_instanceName}};
+
+        // 1. Build the Family for the metric.
+        auto& time_gauge_family = prometheus::BuildGauge()
+                                      .Name("fmu_time_seconds")
+                                      .Help("Current simulation time in seconds")
+                                      .Register(*registry);
+        // 2. Get the specific Gauge instance from the Family using its labels.
+        auto& time_gauge = time_gauge_family.Add(constant_labels);
+
+        auto& u_gauge_family = prometheus::BuildGauge()
+                                   .Name("fmu_input_u")
+                                   .Help("Value of the input signal u")
+                                   .Register(*registry);
+        auto& u_gauge = u_gauge_family.Add(constant_labels);
+
+        auto& y_gauge_family = prometheus::BuildGauge()
+                                   .Name("fmu_output_y")
+                                   .Help("Value of the output signal y")
+                                   .Register(*registry);
+        auto& y_gauge = y_gauge_family.Add(constant_labels);
+
+        auto& k_gauge_family = prometheus::BuildGauge()
+                                   .Name("fmu_parameter_k")
+                                   .Help("Value of the gain parameter k")
+                                   .Register(*registry);
+        auto& k_gauge = k_gauge_family.Add(constant_labels);
+
+        log(fmi2OK, "info", "Prometheus server started on http://127.0.0.1:8080");
+
+        // Main worker loop
+        while (true) {
+            // Wait for a message from the main thread.
+            // This call will block until a message is available or the queue is closed.
+            auto data = m_metricsChannel.pop();
+
+            // If pop() returns nullopt, it means the queue was closed.
+            if (!data) {
+                break; // Exit the loop
+            }
+
+            // Update the Prometheus metrics with the new values.
+            time_gauge.Set(data->time);
+            u_gauge.Set(data->u);
+            y_gauge.Set(data->y);
+            k_gauge.Set(data->k);
+        }
+
+    } catch (const std::exception& e) {
+        log(fmi2Fatal, "prometheus_worker", "An exception occurred in the Prometheus worker thread: " + std::string(e.what()));
+    }
+    log(fmi2OK, "info", "Prometheus worker thread has finished.");
+}

@@ -8,7 +8,7 @@ WRAPPER_FMU_PATH = 'Amplifier_CPP_Wrapper.fmu'
 
 # Simulation parameters
 start_time = 0.0
-stop_time = 10.0
+stop_time = 100.0
 step_size = 0.1
 
 # --- Main Simulation Script ---

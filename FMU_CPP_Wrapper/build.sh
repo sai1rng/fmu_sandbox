@@ -40,7 +40,11 @@ fi
 mkdir -p "${BUILD_DIR}/binaries/${PLATFORM_DIR}"
 
 echo "Compiling for platform: ${PLATFORM_DIR}"
-g++ -shared -fPIC -std=c++11 -I"../Amplifier_files/headers" ${WRAPPER_CPP_SOURCES} -o "${BUILD_DIR}/binaries/${PLATFORM_DIR}/fault_wrapper${SHARED_LIB_EXT}"
+# Add linker flags for prometheus-cpp and pthreads
+# The user must have prometheus-cpp installed for this to work.
+PROMETHEUS_FLAGS="-lprometheus-cpp-core -lprometheus-cpp-pull"
+PTHREAD_FLAGS="-lpthread"
+g++ -shared -fPIC -std=c++17 -I"../Amplifier_files/headers" ${WRAPPER_CPP_SOURCES} -o "${BUILD_DIR}/binaries/${PLATFORM_DIR}/fault_wrapper${SHARED_LIB_EXT}" ${PROMETHEUS_FLAGS} ${PTHREAD_FLAGS}
 echo "Compilation successful."
 
 # 4. Copy wrapper modelDescription.xml
